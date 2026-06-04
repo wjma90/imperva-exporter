@@ -107,10 +107,24 @@ GitHub Actions workflow. Configure GitHub Pages to publish from the `gh-pages`
 branch. Each chart release requires a new `version` in
 `charts/imperva-exporter/Chart.yaml`.
 
+The same workflow also publishes the chart as an OCI artifact in GHCR. OCI does
+not use `index.yaml` or `helm repo add`.
+
 Install or upgrade with Helm:
 
 ```bash
 helm upgrade --install imperva-exporter imperva-exporter/imperva-exporter \
+  --namespace observability \
+  --create-namespace \
+  --set existingSecret.name=imperva-exporter-secret \
+  --set image.tag=main
+```
+
+Install or upgrade from OCI:
+
+```bash
+helm upgrade --install imperva-exporter oci://ghcr.io/wjma90/charts/imperva-exporter \
+  --version 0.1.0 \
   --namespace observability \
   --create-namespace \
   --set existingSecret.name=imperva-exporter-secret \
