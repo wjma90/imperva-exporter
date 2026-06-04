@@ -12,6 +12,7 @@ Imperva Exporter is a Prometheus exporter for monitoring Imperva WAF (Web Applic
   - [Installation](#installation)
   - [Configuration](#configuration)
 - [Usage](#usage)
+- [Kubernetes](#kubernetes)
 - [Metrics](#metrics)
 - [Contributing](#contributing)
 - [License](#license)
@@ -73,6 +74,53 @@ Flags:
 
 
 By default, exporter will start serving metrics at `http://0.0.0.0:8080/metrics`.
+
+## Kubernetes
+
+Kubernetes manifests are available under `k8s/base`, and a Helm chart is
+available under `charts/imperva-exporter`.
+
+The Helm chart does not create the Imperva credentials `Secret`. Create it
+before installing the chart:
+
+```bash
+kubectl create namespace observability
+
+kubectl -n observability create secret generic imperva-exporter-secret \
+  --from-literal=api-id='CHANGE_ME' \
+  --from-literal=api-key='CHANGE_ME' \
+  --from-literal=api-base-url='https://my.incapsula.com/api/'
+```
+
+If you prefer a local manifest, place it in `k8s/local/secret.yaml`. That
+directory is ignored by git.
+
+When the chart repository is published, add it with:
+
+```bash
+helm repo add imperva-exporter https://wjma90.github.io/imperva-exporter
+helm repo update
+```
+
+Install or upgrade with Helm:
+
+```bash
+helm upgrade --install imperva-exporter imperva-exporter/imperva-exporter \
+  --namespace observability \
+  --create-namespace \
+  --set existingSecret.name=imperva-exporter-secret \
+  --set image.tag=main
+```
+
+From a local checkout:
+
+```bash
+helm upgrade --install imperva-exporter ./charts/imperva-exporter \
+  --namespace observability \
+  --create-namespace \
+  --set existingSecret.name=imperva-exporter-secret \
+  --set image.tag=main
+```
 
 ## Metrics
 

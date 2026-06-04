@@ -1,0 +1,10 @@
+Imperva Exporter has been installed.
+
+The chart does not create the Imperva credentials Secret. Make sure this Secret
+exists in namespace {{ .Release.Namespace }}:
+
+  {{ required "existingSecret.name is required." .Values.existingSecret.name }}
+
+Check the service:
+
+  kubectl -n {{ .Release.Namespace }} get svc {{ include "imperva-exporter.fullname" . }}

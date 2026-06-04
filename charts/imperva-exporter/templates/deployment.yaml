@@ -1,0 +1,100 @@
+{{- $secretName := required "existingSecret.name is required. Create a Secret with Imperva API credentials before installing this chart." .Values.existingSecret.name -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "imperva-exporter.fullname" . }}
+  labels:
+    {{- include "imperva-exporter.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "imperva-exporter.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "imperva-exporter.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ include "imperva-exporter.name" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: IMPERVA_EXPORTER_API_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName | quote }}
+                  key: {{ required "existingSecret.keys.apiId is required." .Values.existingSecret.keys.apiId | quote }}
+            - name: IMPERVA_EXPORTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName | quote }}
+                  key: {{ required "existingSecret.keys.apiKey is required." .Values.existingSecret.keys.apiKey | quote }}
+            - name: IMPERVA_EXPORTER_API_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName | quote }}
+                  key: {{ required "existingSecret.keys.apiBaseUrl is required." .Values.existingSecret.keys.apiBaseUrl | quote }}
+            - name: IMPERVA_EXPORTER_METRICS
+              value: {{ .Values.env.metricsPath | quote }}
+            - name: IMPERVA_EXPORTER_SERVER_TIMEOUT
+              value: {{ .Values.env.serverTimeout | quote }}
+            - name: IMPERVA_EXPORTER_CLIENT_TIMEOUT
+              value: {{ .Values.env.clientTimeout | quote }}
+            - name: IMPERVA_EXPORTER_CACHE_TTL
+              value: {{ .Values.env.cacheTtl | quote }}
+            - name: IMPERVA_EXPORTER_UPDATE_INTERVAL
+              value: {{ .Values.env.updateInterval | quote }}
+            - name: IMPERVA_EXPORTER_WORKERS
+              value: {{ .Values.env.workers | quote }}
+            - name: IMPERVA_EXPORTER_DEBUG
+              value: {{ .Values.env.debug | quote }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.env.metricsPath | quote }}
+              port: metrics
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+          {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.env.metricsPath | quote }}
+              port: metrics
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
