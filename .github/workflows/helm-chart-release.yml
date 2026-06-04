@@ -45,6 +45,7 @@ jobs:
         uses: helm/chart-releaser-action@v1.7.0
         with:
           charts_dir: charts
+          skip_existing: true
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -61,8 +62,25 @@ jobs:
             --username "${{ github.actor }}" \
             --password-stdin
 
+      - name: Read chart version
+        id: chart
+        run: |
+          version=$(awk '/^version:/ { print $2; exit }' charts/imperva-exporter/Chart.yaml)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check OCI chart version
+        id: oci
+        continue-on-error: true
+        run: helm show chart oci://ghcr.io/${{ github.repository_owner }}/charts/imperva-exporter --version "${{ steps.chart.outputs.version }}"
+
       - name: Package Helm chart
+        if: steps.oci.outcome == 'failure'
         run: helm package charts/imperva-exporter --destination .cr-release-packages
 
       - name: Push Helm chart to GHCR
+        if: steps.oci.outcome == 'failure'
         run: helm push .cr-release-packages/imperva-exporter-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
+
+      - name: Skip existing OCI chart
+        if: steps.oci.outcome == 'success'
+        run: echo "OCI chart imperva-exporter:${{ steps.chart.outputs.version }} already exists; skipping push."
