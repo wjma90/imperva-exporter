@@ -1,15 +1,19 @@
 package imperva
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/kofalt/go-memoize"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/xciber/imperva-exporter/pkg/metrics"
-	"golang.org/x/exp/slog"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,11 +21,13 @@ const (
 	baseApiUrl       = "https://my.incapsula.com/api/"
 	siteListEndpoint = "prov/v1/sites/list"
 	statsApiEndpoint = "stats/v1"
+	maxErrorBodySize = 4096
 )
 
 type Client struct {
 	httpClient   *http.Client
 	logger       *slog.Logger
+	baseURL      string
 	clientId     string
 	clientSecret string
 	Sites        map[string]SiteDesc
@@ -107,7 +113,13 @@ func (c *Client) post(path string) ([]byte, error) {
 }
 
 func (c *Client) postWithParams(path string, param map[string]string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodPost, baseApiUrl+path, nil)
+	endpoint, err := url.JoinPath(c.baseURL, path)
+	if err != nil {
+		c.logger.Error("Error building request URL", "error", err)
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, nil)
 	if err != nil {
 		c.logger.Error("Error creating request", "error", err)
 		return nil, err
@@ -139,7 +151,9 @@ func (c *Client) postWithParams(path string, param map[string]string) ([]byte, e
 	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		c.logger.Error("Error response from server", "status", resp.Status)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
+		err := fmt.Errorf("imperva API request to %s returned %s: %s", path, resp.Status, strings.TrimSpace(string(body)))
+		c.logger.Error("Error response from server", "status", resp.Status, "path", path)
 		return nil, err
 	}
 
@@ -187,6 +201,9 @@ func (c *Client) UpdateSiteList() error {
 			c.logger.Error("Error unmarshalling response", "error", err)
 			return err
 		}
+		if sr.Res != 0 {
+			return fmt.Errorf("imperva site list failed: res=%d message=%q", sr.Res, sr.ResMessage)
+		}
 		if len(sr.Sites) == 0 {
 			break
 		}
@@ -218,101 +235,115 @@ func (c *Client) getSiteWafMetrics(domain string) ([]*prometheus.Metric, error) 
 	return res, nil
 }
 
+func summaryValue(datum []interface{}, metricID string) (string, float64, error) {
+	if len(datum) != 2 {
+		return "", 0, fmt.Errorf("invalid data format for metric %s", metricID)
+	}
+
+	key, ok := datum[0].(string)
+	if !ok {
+		return "", 0, fmt.Errorf("invalid key type for metric %s", metricID)
+	}
+	if key == "" {
+		key = "unknown"
+	}
+
+	switch val := datum[1].(type) {
+	case float64:
+		return key, val, nil
+	case int:
+		return key, float64(val), nil
+	case int64:
+		return key, float64(val), nil
+	case json.Number:
+		f, err := val.Float64()
+		if err != nil {
+			return "", 0, fmt.Errorf("invalid numeric value for metric %s: %w", metricID, err)
+		}
+		return key, f, nil
+	default:
+		return "", 0, fmt.Errorf("invalid value type for metric %s", metricID)
+	}
+}
+
 func (c *Client) sumToMetric(domain string, data SumData) ([]*prometheus.Metric, error) {
 
 	res := make([]*prometheus.Metric, 0)
+	metricName := ""
+
 	switch data.Id {
 	case "api.stats.requests_geo_dist_summary.datacenter":
-		keys := make(map[string]struct{})
-		for _, datum := range data.Data {
-			if len(datum) != 2 {
-				return nil, fmt.Errorf("invalid data format for metric %s", data.Id)
-			}
-			key := datum[0].(string)
-			if key == "" {
-				key = "unknown"
-			}
-			val := datum[1].(float64)
-			if _, found := keys[key]; !found {
-				keys[key] = struct{}{}
-				res = append(res, c.metrics["geo_dc"].GetPromMetric(val, []string{domain, key}))
-			}
-		}
+		metricName = "geo_dc"
 	case "api.stats.visits_dist_summary.country":
-		keys := make(map[string]struct{})
-		for _, datum := range data.Data {
-			if len(datum) != 2 {
-				return nil, fmt.Errorf("invalid data format for metric %s", data.Id)
-			}
-			key := datum[0].(string)
-			if key == "" {
-				key = "unknown"
-			}
-			val := datum[1].(float64)
-			if _, found := keys[key]; !found {
-				keys[key] = struct{}{}
-				res = append(res, c.metrics["visits_country"].GetPromMetric(val, []string{domain, key}))
-			}
-		}
+		metricName = "visits_country"
 	case "api.stats.visits_dist_summary.client_app":
-		keys := make(map[string]struct{})
-		for _, datum := range data.Data {
-			if len(datum) != 2 {
-				return nil, fmt.Errorf("invalid data format for metric %s", data.Id)
-			}
-			key := datum[0].(string)
-			if key == "" {
-				key = "unknown"
-			}
-			val := datum[1].(float64)
-			if _, found := keys[key]; !found {
-				keys[key] = struct{}{}
-				res = append(res, c.metrics["visits_client"].GetPromMetric(val, []string{domain, key}))
-			}
-		}
+		metricName = "visits_client"
 	default:
 		return nil, fmt.Errorf("unknown metric %s", data.Id)
 	}
+
+	keys := make(map[string]struct{})
+	for _, datum := range data.Data {
+		key, val, err := summaryValue(datum, data.Id)
+		if err != nil {
+			return nil, err
+		}
+		if _, found := keys[key]; !found {
+			keys[key] = struct{}{}
+			res = append(res, c.metrics[metricName].GetPromMetric(val, []string{domain, key}))
+		}
+	}
+
 	return res, nil
 }
 
-func (c *Client) tsdToMetric(domain string, tsData TSData) (*prometheus.Metric, error) {
-	// we relay that values are sorted by time, and we take
-	// one point before the last one for each time series
-	// because the last one is not complete
-	// so data will be 5 minutes (one bucket) late
-	// in future we will try to scape last point diffs
-	// to get a more accurate value
-	t := len(tsData.Data) - 2
-	if t < 0 {
+func latestCompletePoint(tsData TSData) ([]int64, error) {
+	if len(tsData.Data) < 2 {
 		return nil, fmt.Errorf("no data for metric %s", tsData.Id)
 	}
 
-	if len(tsData.Data[t]) != 2 {
-		return nil, fmt.Errorf("wrong number of data for metric %s", tsData.Id)
+	data := make([][]int64, 0, len(tsData.Data))
+	for _, point := range tsData.Data {
+		if len(point) != 2 {
+			return nil, fmt.Errorf("wrong number of data for metric %s", tsData.Id)
+		}
+		data = append(data, point)
+	}
+
+	sort.Slice(data, func(i, j int) bool {
+		return data[i][0] < data[j][0]
+	})
+
+	return data[len(data)-2], nil
+}
+
+func (c *Client) tsdToMetric(domain string, tsData TSData) (*prometheus.Metric, error) {
+	point, err := latestCompletePoint(tsData)
+	if err != nil {
+		return nil, err
 	}
 
 	switch tsData.Id {
 	case "api.stats.bandwidth_timeseries.bandwidth":
-		return c.metrics["bandwidth"].GetPromMetric(float64(tsData.Data[t][1]), []string{domain}), nil
+		return c.metrics["bandwidth"].GetPromMetric(float64(point[1]), []string{domain}), nil
 	case "api.stats.bandwidth_timeseries.bps":
-		return c.metrics["bps"].GetPromMetric(float64(tsData.Data[t][1]), []string{domain}), nil
+		return c.metrics["bps"].GetPromMetric(float64(point[1]), []string{domain}), nil
 	case "api.stats.hits_timeseries.human":
-		return c.metrics["hits_human"].GetPromMetric(float64(tsData.Data[t][1]), []string{domain}), nil
+		return c.metrics["hits_human"].GetPromMetric(float64(point[1]), []string{domain}), nil
 	case "api.stats.hits_timeseries.human_ps":
-		return c.metrics["hits_human_rps"].GetPromMetric(float64(tsData.Data[t][1]), []string{domain}), nil
+		return c.metrics["hits_human_rps"].GetPromMetric(float64(point[1]), []string{domain}), nil
 	case "api.stats.hits_timeseries.bot":
-		return c.metrics["hits_bot"].GetPromMetric(float64(tsData.Data[t][1]), []string{domain}), nil
+		return c.metrics["hits_bot"].GetPromMetric(float64(point[1]), []string{domain}), nil
 	case "api.stats.hits_timeseries.bot_ps":
-		return c.metrics["hits_bot_rps"].GetPromMetric(float64(tsData.Data[t][1]), []string{domain}), nil
+		return c.metrics["hits_bot_rps"].GetPromMetric(float64(point[1]), []string{domain}), nil
 	case "api.stats.hits_timeseries.blocked":
-		return c.metrics["hits_blocked"].GetPromMetric(float64(tsData.Data[t][1]), []string{domain}), nil
+		return c.metrics["hits_blocked"].GetPromMetric(float64(point[1]), []string{domain}), nil
 	case "api.stats.hits_timeseries.blocked_ps":
-		return c.metrics["hits_blocked_rps"].GetPromMetric(float64(tsData.Data[t][1]), []string{domain}), nil
+		return c.metrics["hits_blocked_rps"].GetPromMetric(float64(point[1]), []string{domain}), nil
 	case "api.stats.visits_timeseries.human":
-		return c.metrics["visits_human"].GetPromMetric(float64(tsData.Data[t][1]), []string{domain}), nil
+		return c.metrics["visits_human"].GetPromMetric(float64(point[1]), []string{domain}), nil
 	case "api.stats.visits_timeseries.bot":
-		return c.metrics["visits_bot"].GetPromMetric(float64(tsData.Data[t][1]), []string{domain}), nil
+		return c.metrics["visits_bot"].GetPromMetric(float64(point[1]), []string{domain}), nil
 	default:
 		return nil, fmt.Errorf("unknown metric %s", tsData.Id)
 	}
@@ -349,6 +380,9 @@ func (c *Client) getSiteSumMetrics(domain string) ([]*prometheus.Metric, error) 
 	if err != nil {
 		c.logger.Error("Error unmarshalling summary response", "domain", domain, "error", err)
 		return nil, err
+	}
+	if sr.Res != 0 {
+		return nil, fmt.Errorf("imperva summary failed for %s: res=%d message=%q", domain, sr.Res, sr.ResMessage)
 	}
 
 	c.logger.Debug("summary metrics unmarshalled", "domain", domain)
@@ -404,6 +438,9 @@ func (c *Client) getSiteTSMetrics(domain string) ([]*prometheus.Metric, error) {
 	if err != nil {
 		c.logger.Error("Error unmarshalling response", "domain", domain, "error", err)
 		return nil, err
+	}
+	if tsr.Res != 0 {
+		return nil, fmt.Errorf("imperva time series failed for %s: res=%d message=%q", domain, tsr.Res, tsr.ResMessage)
 	}
 
 	c.logger.Debug("metrics unmarshalled", "domain", domain)
@@ -465,12 +502,36 @@ func (c *Client) GetMetricsByDomain(domain string) ([]*prometheus.Metric, error)
 	return res, nil
 }
 
-func NewClient(id string, secret string, logger *slog.Logger, timeout int, ttl int) *Client {
+func normalizeAPIBaseURL(apiBaseURL string) (string, error) {
+	if apiBaseURL == "" {
+		apiBaseURL = baseApiUrl
+	}
+	apiBaseURL = strings.TrimRight(apiBaseURL, "/") + "/"
+
+	parsed, err := url.Parse(apiBaseURL)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme != "https" || parsed.Host == "" {
+		return "", fmt.Errorf("api base url must be an absolute https URL")
+	}
+
+	return apiBaseURL, nil
+}
+
+func NewClient(id string, secret string, logger *slog.Logger, timeout int, ttl int, apiBaseURL string) *Client {
+	apiBaseURL, err := normalizeAPIBaseURL(apiBaseURL)
+	if err != nil {
+		logger.Error("Invalid Imperva API base URL, falling back to default", "error", err)
+		apiBaseURL = baseApiUrl
+	}
+
 	c := &Client{
 		httpClient: &http.Client{
 			Timeout: time.Duration(timeout) * time.Second,
 		},
 		logger:       logger,
+		baseURL:      apiBaseURL,
 		clientId:     id,
 		clientSecret: secret,
 		metrics:      make(map[string]*metrics.MetricInfo),
@@ -496,7 +557,7 @@ func NewClient(id string, secret string, logger *slog.Logger, timeout int, ttl i
 	c.metrics["visits_client"] = metrics.NewMetric("visits_client", "Visits by client application", prometheus.GaugeValue, "imperva", "stats", []string{"domain", "client"}, nil)
 
 	// initial update of site list
-	err := c.UpdateSiteList()
+	err = c.UpdateSiteList()
 	if err != nil {
 		c.logger.Error("Error updating site list", "error", err)
 	}

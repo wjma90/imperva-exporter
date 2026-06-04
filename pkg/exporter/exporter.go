@@ -3,7 +3,7 @@ package exporter
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/xciber/imperva-exporter/pkg/imperva"
-	"golang.org/x/exp/slog"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -92,15 +92,20 @@ func (e *Exporter) scrape(ch chan<- prometheus.Metric) {
 	}
 }
 
-func NewExporter(logger *slog.Logger, id string, secret string, timeout int, ttl int, workers int) *Exporter {
+func NewExporter(logger *slog.Logger, id string, secret string, timeout int, ttl int, workers int, apiBaseURL string) *Exporter {
+	if workers < 1 {
+		logger.Warn("Workers must be positive, using default", "workers", workers, "default", 1)
+		workers = 1
+	}
+
 	e := &Exporter{
 		logger:        logger,
 		metricsState:  make(map[string][]*prometheus.Metric),
-		impervaClient: imperva.NewClient(id, secret, logger, timeout, ttl),
+		impervaClient: imperva.NewClient(id, secret, logger, timeout, ttl, apiBaseURL),
 		totalScrapes: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "exporter_scrapes_total",
-			Help:      "Current total HAProxy scrapes.",
+			Help:      "Current total Imperva exporter scrapes.",
 		}),
 	}
 

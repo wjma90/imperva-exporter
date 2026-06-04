@@ -20,7 +20,7 @@ Imperva Exporter is a Prometheus exporter for monitoring Imperva WAF (Web Applic
 
 ### Prerequisites
 
-- Go 1.20 or higher
+- Go 1.26.4 or higher
 
 ### Installation
 
@@ -34,6 +34,22 @@ go get -u github.com/XCiber/imperva-exporter
 
 The exporter requires configuration to connect to the Imperva API. You can provide the required configuration through command-line flags or environment variables.
 
+Required:
+
+- `IMPERVA_EXPORTER_API_ID` - Imperva API ID.
+- `IMPERVA_EXPORTER_API_KEY` - Imperva API key.
+
+Optional:
+
+- `IMPERVA_EXPORTER_API_BASE_URL` - Imperva API base URL. Defaults to `https://my.incapsula.com/api/` and must be HTTPS.
+- `IMPERVA_EXPORTER_LISTEN` - Metrics listen address. Defaults to `:8080`.
+- `IMPERVA_EXPORTER_METRICS` - Metrics path. Defaults to `/metrics`.
+- `IMPERVA_EXPORTER_CLIENT_TIMEOUT` - Imperva API client timeout in seconds. Defaults to `15`.
+- `IMPERVA_EXPORTER_SERVER_TIMEOUT` - HTTP server timeout in seconds. Defaults to `60`.
+- `IMPERVA_EXPORTER_CACHE_TTL` - Imperva API response cache TTL in seconds. Defaults to `120`.
+- `IMPERVA_EXPORTER_UPDATE_INTERVAL` - Imperva refresh interval in seconds. Defaults to `60`.
+- `IMPERVA_EXPORTER_WORKERS` - Initial scrape worker count. Defaults to `5`.
+
 ## Usage
 
 ```
@@ -44,6 +60,7 @@ Flags:
       --cache_ttl int         Cache TTL in seconds, env: IMPERVA_EXPORTER_CACHE_TTL (default 120)
       --clientTimeout int     http client timeout in seconds, env: IMPERVA_EXPORTER_CLIENT_TIMEOUT (default 15)
       --debug                 enable debug loglevel, env: IMPERVA_EXPORTER_DEBUG
+      --api_base_url string   Imperva API base URL, env: IMPERVA_EXPORTER_API_BASE_URL (default "https://my.incapsula.com/api/")
   -h, --help                  help for imperva-exporter
       --listen string         metrics listen port, env: IMPERVA_EXPORTER_LISTEN (default ":8080")
       --metrics string        metrics path, env: IMPERVA_EXPORTER_METRICS (default "/metrics")

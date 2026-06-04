@@ -7,7 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	v "github.com/prometheus/common/version"
 	"github.com/xciber/imperva-exporter/pkg/exporter"
-	"golang.org/x/exp/slog"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -34,6 +34,7 @@ var (
 	clientTimeout  = envGet("CLIENT_TIMEOUT", 15).(int)
 	apiId          = envGet("API_ID", "").(string)
 	apiKey         = envGet("API_KEY", "").(string)
+	apiBaseURL     = envGet("API_BASE_URL", "https://my.incapsula.com/api/").(string)
 	cacheTtl       = envGet("CACHE_TTL", 120).(int)
 	workers        = envGet("WORKERS", 5).(int)
 	updateInterval = envGet("UPDATE_INTERVAL", 60).(int)
@@ -52,21 +53,24 @@ func root(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	e = exporter.NewExporter(logger, apiId, apiKey, clientTimeout, cacheTtl, workers)
+	e = exporter.NewExporter(logger, apiId, apiKey, clientTimeout, cacheTtl, workers, apiBaseURL)
 	prometheus.MustRegister(e)
 	prometheus.MustRegister(v.NewCollector("imperva_exporter"))
 
 	http.Handle(metricsPath, promhttp.Handler())
 
 	srv := &http.Server{
-		Addr:        metricsPort,
-		ReadTimeout: time.Duration(serverTimeout) * time.Second,
+		Addr:              metricsPort,
+		ReadHeaderTimeout: time.Duration(serverTimeout) * time.Second,
+		ReadTimeout:       time.Duration(serverTimeout) * time.Second,
+		WriteTimeout:      time.Duration(serverTimeout) * time.Second,
+		IdleTimeout:       time.Duration(serverTimeout) * time.Second,
 	}
 
 	e.RunUpdater(time.Duration(updateInterval))
 
 	if err := srv.ListenAndServe(); err != nil {
-		logger.Error("msg", "Error starting HTTP server", "error", err)
+		logger.Error("Error starting HTTP server", "error", err)
 		os.Exit(1)
 	}
 }
@@ -91,6 +95,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", debug, "enable debug loglevel, env: IMPERVA_EXPORTER_DEBUG")
 	rootCmd.PersistentFlags().IntVar(&serverTimeout, "read_timeout", serverTimeout, "http server read timeout in seconds, env: IMPERVA_EXPORTER_SERVER_TIMEOUT")
 	rootCmd.PersistentFlags().IntVar(&clientTimeout, "clientTimeout", clientTimeout, "http client timeout in seconds, env: IMPERVA_EXPORTER_CLIENT_TIMEOUT")
+	rootCmd.PersistentFlags().StringVar(&apiBaseURL, "api_base_url", apiBaseURL, "Imperva API base URL, env: IMPERVA_EXPORTER_API_BASE_URL")
 	rootCmd.PersistentFlags().IntVar(&cacheTtl, "cache_ttl", cacheTtl, "Cache TTL in seconds, env: IMPERVA_EXPORTER_CACHE_TTL")
 	rootCmd.PersistentFlags().IntVar(&workers, "workers", workers, "Initial query workers, env: IMPERVA_EXPORTER_WORKERS")
 	rootCmd.PersistentFlags().IntVar(&updateInterval, "update_interval", updateInterval, "Imperva update interval in seconds, env: IMPERVA_EXPORTER_UPDATE_INTERVAL")
