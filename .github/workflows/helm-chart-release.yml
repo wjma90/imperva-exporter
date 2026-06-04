@@ -12,10 +12,11 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   release:
-    name: Release chart
+    name: Release chart repository
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,3 +47,22 @@ jobs:
           charts_dir: charts
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-oci:
+    name: Publish OCI chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Package Helm chart
+        run: helm package charts/imperva-exporter --destination .cr-release-packages
+
+      - name: Push Helm chart to GHCR
+        run: helm push .cr-release-packages/imperva-exporter-*.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
