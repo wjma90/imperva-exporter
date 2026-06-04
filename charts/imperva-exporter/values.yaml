@@ -1,0 +1,73 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/wjma90/imperva-exporter
+  pullPolicy: IfNotPresent
+  tag: "main"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: metrics
+
+# REQUIRED:
+# The chart does not create a Kubernetes Secret because Imperva credentials must
+# not be committed to git. Create this Secret before installing or upgrading the
+# release. It must contain API ID, API key, and API base URL/endpoint keys.
+existingSecret:
+  name: ""
+  keys:
+    apiId: api-id
+    apiKey: api-key
+    apiBaseUrl: api-base-url
+
+env:
+  metricsPath: /metrics
+  serverTimeout: 60
+  clientTimeout: 15
+  cacheTtl: 120
+  updateInterval: 60
+  workers: 5
+  debug: false
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 10
+  periodSeconds: 30
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 60
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

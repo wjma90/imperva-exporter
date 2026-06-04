@@ -64,3 +64,6 @@ Temporary Items
 # Go workspace file
 go.work
 
+# Local Kubernetes manifests with real secrets.
+k8s/local/*
+!k8s/local/README.md
