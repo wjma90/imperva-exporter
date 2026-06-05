@@ -49,12 +49,30 @@ helm upgrade --install imperva-exporter imperva-exporter/imperva-exporter \
 
 ```bash
 helm upgrade --install imperva-exporter oci://ghcr.io/wjma90/charts/imperva-exporter \
-  --version 0.1.0 \
+  --version 0.1.2 \
   --namespace observability \
   --create-namespace \
   --set existingSecret.name=imperva-exporter-secret \
   --set image.tag=main
 ```
+
+## ServiceMonitor
+
+Prometheus Operator `ServiceMonitor` is enabled by default. Configure it with:
+
+```bash
+helm upgrade --install imperva-exporter imperva-exporter/imperva-exporter \
+  --namespace observability \
+  --create-namespace \
+  --set existingSecret.name=imperva-exporter-secret \
+  --set serviceMonitor.enabled=true \
+  --set serviceMonitor.port=metrics \
+  --set serviceMonitor.path=/metrics \
+  --set serviceMonitor.interval=60s
+```
+
+Disable it with `--set serviceMonitor.enabled=false` if the cluster does not
+have the Prometheus Operator CRDs.
 
 ## Install from a local checkout
 

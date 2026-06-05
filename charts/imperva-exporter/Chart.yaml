@@ -2,7 +2,7 @@ apiVersion: v2
 name: imperva-exporter
 description: A Prometheus exporter for Imperva Cloud WAF metrics.
 type: application
-version: 0.1.1
+version: 0.1.2
 appVersion: "main"
 home: https://github.com/wjma90/imperva-exporter
 sources:

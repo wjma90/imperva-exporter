@@ -14,6 +14,14 @@ service:
   port: 8080
   targetPort: metrics
 
+serviceMonitor:
+  enabled: false
+  port: metrics
+  path: /metrics
+  interval: 60s
+  labels: {}
+  annotations: {}
+
 # REQUIRED:
 # The chart does not create a Kubernetes Secret because Imperva credentials must
 # not be committed to git. Create this Secret before installing or upgrading the
@@ -62,11 +70,13 @@ readinessProbe:
   enabled: true
   initialDelaySeconds: 10
   periodSeconds: 30
+  timeoutSeconds: 5
 
 livenessProbe:
   enabled: true
   initialDelaySeconds: 30
   periodSeconds: 60
+  timeoutSeconds: 5
 
 nodeSelector: {}
 tolerations: []
