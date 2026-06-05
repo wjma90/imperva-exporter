@@ -3,6 +3,26 @@ entries:
   imperva-exporter:
   - apiVersion: v2
     appVersion: main
+    created: "2026-06-05T00:10:51.030262823Z"
+    description: A Prometheus exporter for Imperva Cloud WAF metrics.
+    digest: f9cfc8c7da95c5c94b866fa4bd23d126a1b3f9c485586b9d59c634c890841e4a
+    home: https://github.com/wjma90/imperva-exporter
+    keywords:
+    - imperva
+    - prometheus
+    - exporter
+    - observability
+    maintainers:
+    - name: Willian Marchan
+    name: imperva-exporter
+    sources:
+    - https://github.com/wjma90/imperva-exporter
+    type: application
+    urls:
+    - https://github.com/wjma90/imperva-exporter/releases/download/imperva-exporter-0.1.2/imperva-exporter-0.1.2.tgz
+    version: 0.1.2
+  - apiVersion: v2
+    appVersion: main
     created: "2026-06-04T23:53:59.04795307Z"
     description: A Prometheus exporter for Imperva Cloud WAF metrics.
     digest: 4597d3382e67abe7715b274931a9de92c21646b49b247e8bab8f0ab805977e1d
@@ -41,4 +61,4 @@ entries:
     urls:
     - https://github.com/wjma90/imperva-exporter/releases/download/imperva-exporter-0.1.0/imperva-exporter-0.1.0.tgz
     version: 0.1.0
-generated: "2026-06-04T23:53:59.047960541Z"
+generated: "2026-06-05T00:10:51.030269453Z"
